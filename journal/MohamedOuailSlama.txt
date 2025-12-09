@@ -1,0 +1,30 @@
+Mohamed Ouail Slama 900233932
+Saturday, December 6, 2025
+
+-Focused on implementing the parsing system for the simulator
+
+-Developed the input file parser that reads the structured format ( instructions, memory initialization)
+
+-Created the ParsedInput struct to store configuration, instructions, and memory data
+
+-Implemented instruction parsing function that converts assembly text to Instruction structs
+
+Sunday, December 7, 2025
+
+-Worked on the flush system for branch misprediction recovery
+
+-Implemented the flush() function that clears speculative instructions from ROB and reservation stations
+
+-Developed some core data structures like HardwareConfig
+
+Monday, December 8, 2025
+
+-Implemented the bonus feature for hardware configuration customization
+
+-Added a new constructor to TomasuroSimulator class that accepts HardwareConfig parameter
+
+-Adapted the parser to handle optional CONFIG section in input files
+
+-Extended the input format specification to include all configurable hardware parameters
+
+-Tested the customization feature with various hardware configurations
