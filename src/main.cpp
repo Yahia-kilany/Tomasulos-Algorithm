@@ -937,8 +937,6 @@ ParsedInput parse(const string& filename) {
 
 
 int main() {
-  TomasuroSimulator sim;
-
   cout << "=== TOMASULO ALGORITHM SIMULATOR ===\n\n";
 
   // Choose input method
@@ -949,8 +947,6 @@ int main() {
   int choice;
   cin >> choice;
   cin.ignore();
-
-  int start_addr;
 
   if (choice == 2) {
     // File input
@@ -1001,6 +997,9 @@ int main() {
 
   } else {
     // Manual input
+    TomasuroSimulator sim;  // ← Create sim HERE for manual mode
+    
+    int start_addr;
     cout << "\nEnter starting address for program: ";
     cin >> start_addr;
     cin.ignore();
@@ -1038,12 +1037,11 @@ int main() {
         break;
       sim.setMemory(addr, value);
     }
+    
+    cout << "\n=== RUNNING SIMULATION ===\n";
+    sim.run();
+    sim.printResults();
   }
-
-  cout << "\n=== RUNNING SIMULATION ===\n";
-  sim.run();
-
-  sim.printResults();
 
   return 0;
 }
