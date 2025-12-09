@@ -74,3 +74,20 @@ femTomas is a simulator that models a 16-bit RISC processor using **Tomasulo's a
    - Number of reservation stations per functional unit
    - ROB size
    - Execution latencies for all instruction types
+
+## Input Methods
+**Manual Input:** Enter instructions and memory values interactively  
+**File Input:** Load from a structured text file (see format below)
+
+## Input File Format
+[Optional CONFIG section]
+<starting_address>
+<instruction_1>
+<instruction_2>
+...
+END
+<address_1> <value_1>
+<address_2> <value_2>
+...
+-1 -1
+For detailed information about the output format and complete documentation, see [input_format.md](input_format.md).
