@@ -78,6 +78,48 @@ struct ROBEntry {
         is_speculative(false), branch_target(-1), issued_inst_index(-1) {}
 };
 
+
+
+// Hardware configuration structure
+struct HardwareConfig {
+  // Reservation stations
+  int load_rs = 2;
+  int store_rs = 1;
+  int beq_rs = 2;
+  int call_ret_rs = 1;
+  int addsub_rs = 4;
+  int nand_rs = 2;
+  int mul_rs = 1;
+  
+  // ROB
+  int rob_entries = 8;
+  
+  // Execution cycles
+  int load_cycles = 6;
+  int store_cycles = 6;
+  int beq_cycles = 1;
+  int call_cycles = 1;
+  int ret_cycles = 1;
+  int add_cycles = 2;
+  int sub_cycles = 2;
+  int nand_cycles = 1;
+  int mul_cycles = 12;
+};
+
+// Parsed input data
+struct ParsedInput {
+  HardwareConfig config;
+  int start_address;
+  map<int, Instruction> instructions;
+  map<int, int> memory;
+  bool success;
+  string error_message;
+  
+  ParsedInput() : start_address(0), success(false) {}
+};
+
+// ===========================    SIMULATION LOGIC    ================================== //
+
 class TomasuroSimulator {
 private:
   // Hardware components
@@ -94,7 +136,7 @@ private:
   vector<int> register_status;
   map<int, int> memory;
 
-  map<int, Instruction> instructions;            // PC -> Instruction definition
+  map<int, Instruction> instructions;            // PC -> Instruction definition 
   vector<IssuedInstruction> issued_instructions; // All issued instances
   map<int, int> instruction_issue_count; // Track how many times each PC issued
   int cycle;
@@ -144,6 +186,40 @@ public:
     execution_cycles[SUB] = 2;
     execution_cycles[NAND] = 1;
     execution_cycles[MUL] = 12;
+  }
+
+  TomasuroSimulator(const HardwareConfig& config)
+      : cycle(0), fetch_pc(0), rob_head(0), rob_tail(0),
+        total_instructions_issued(0), total_instructions_committed(0),
+        branches_encountered(0), branch_mispredictions(0), speculating(false),
+        speculative_branch_rob(-1), max_instructions(1000) {
+    
+    // Initialize reservation stations with custom sizes
+    load_rs.resize(config.load_rs);
+    store_rs.resize(config.store_rs);
+    beq_rs.resize(config.beq_rs);
+    call_ret_rs.resize(config.call_ret_rs);
+    addsub_rs.resize(config.addsub_rs);
+    nand_rs.resize(config.nand_rs);
+    mul_rs.resize(config.mul_rs);
+
+    // Initialize ROB with custom size
+    rob.resize(config.rob_entries);
+
+    // Initialize registers (R0 always 0)
+    registers.resize(8, 0);
+    register_status.resize(8, -1);
+
+    // Set execution cycles from config
+    execution_cycles[LOAD] = config.load_cycles;
+    execution_cycles[STORE] = config.store_cycles;
+    execution_cycles[BEQ] = config.beq_cycles;
+    execution_cycles[CALL] = config.call_cycles;
+    execution_cycles[RET] = config.ret_cycles;
+    execution_cycles[ADD] = config.add_cycles;
+    execution_cycles[SUB] = config.sub_cycles;
+    execution_cycles[NAND] = config.nand_cycles;
+    execution_cycles[MUL] = config.mul_cycles;
   }
 
   void addInstruction(int pc, const Instruction &inst) {
@@ -212,6 +288,8 @@ public:
       rs_bank = &call_ret_rs;
       break;
     case ADD:
+      rs_bank = &addsub_rs;
+      break; 
     case SUB:
       rs_bank = &addsub_rs;
       break;
@@ -740,6 +818,123 @@ Instruction parseInstruction(const string &line, int pc) {
 
   return inst;
 }
+// ===========================    PARSING LOGIC    ================================== //
+
+ParsedInput parse(const string& filename) {
+  ParsedInput result;
+  ifstream infile(filename);
+  
+  if (!infile.is_open()) {
+    result.success = false;
+    result.error_message = "Could not open file '" + filename + "'";
+    return result;
+  }
+  
+  string line;
+  enum ParseState { 
+    LOOKING_FOR_CONFIG_OR_ADDRESS, 
+    IN_CONFIG, 
+    READ_ADDRESS, 
+    READING_INSTRUCTIONS, 
+    READING_MEMORY 
+  };
+  
+  ParseState state = LOOKING_FOR_CONFIG_OR_ADDRESS;
+  int pc = 0;
+  
+  while (getline(infile, line)) {
+    // Trim whitespace
+    line.erase(0, line.find_first_not_of(" \t\r\n"));
+    line.erase(line.find_last_not_of(" \t\r\n") + 1);
+    
+    // Skip empty lines
+    if (line.empty()) continue;
+    
+    // State machine for parsing
+    if (state == LOOKING_FOR_CONFIG_OR_ADDRESS) {
+      if (line == "CONFIG") {
+        state = IN_CONFIG;
+      } else {
+        // It's the starting address
+        try {
+          result.start_address = stoi(line);
+          pc = result.start_address;
+          state = READING_INSTRUCTIONS;
+        } catch (...) {
+          result.success = false;
+          result.error_message = "Invalid starting address: " + line;
+          return result;
+        }
+      }
+    }
+    else if (state == IN_CONFIG) {
+      if (line == "END_CONFIG") {
+        state = LOOKING_FOR_CONFIG_OR_ADDRESS;
+      } else {
+        // Parse configuration parameter
+        stringstream ss(line);
+        string param;
+        int value;
+        ss >> param >> value;
+        
+        transform(param.begin(), param.end(), param.begin(), ::toupper);
+        
+        // Reservation stations
+        if (param == "LOAD_RS") result.config.load_rs = value;
+        else if (param == "STORE_RS") result.config.store_rs = value;
+        else if (param == "BEQ_RS") result.config.beq_rs = value;
+        else if (param == "CALL_RET_RS") result.config.call_ret_rs = value;
+        else if (param == "ADDSUB_RS") result.config.addsub_rs = value;
+        else if (param == "NAND_RS") result.config.nand_rs = value;
+        else if (param == "MUL_RS") result.config.mul_rs = value;
+        
+        // ROB
+        else if (param == "ROB_ENTRIES") result.config.rob_entries = value;
+        
+        // Execution cycles
+        else if (param == "LOAD_CYCLES") result.config.load_cycles = value;
+        else if (param == "STORE_CYCLES") result.config.store_cycles = value;
+        else if (param == "BEQ_CYCLES") result.config.beq_cycles = value;
+        else if (param == "CALL_CYCLES") result.config.call_cycles = value;
+        else if (param == "RET_CYCLES") result.config.ret_cycles = value;
+        else if (param == "ADD_CYCLES") result.config.add_cycles = value;
+        else if (param == "SUB_CYCLES") result.config.sub_cycles = value;
+        else if (param == "NAND_CYCLES") result.config.nand_cycles = value;
+        else if (param == "MUL_CYCLES") result.config.mul_cycles = value;
+        
+        else {
+          cout << "Warning: Unknown config parameter '" << param << "'\n";
+        }
+      }
+    }
+    else if (state == READING_INSTRUCTIONS) {
+      if (line == "END" || line == "end") {
+        state = READING_MEMORY;
+      } else {
+        Instruction inst = parseInstruction(line, pc);
+        result.instructions[pc] = inst;
+        pc++;
+      }
+    }
+    else if (state == READING_MEMORY) {
+      stringstream ss(line);
+      int addr, value;
+      ss >> addr >> value;
+      
+      if (addr == -1) {
+        break; // Done reading memory
+      }
+      
+      result.memory[addr] = value;
+    }
+  }
+  
+  infile.close();
+  result.success = true;
+  return result;
+}
+
+
 
 int main() {
   TomasuroSimulator sim;
@@ -763,41 +958,46 @@ int main() {
     string filename;
     getline(cin, filename);
 
-    ifstream infile(filename);
-    if (!infile.is_open()) {
-      cerr << "Error: Could not open file '" << filename << "'\n";
+    ParsedInput parsed = parse(filename);
+    
+    if (!parsed.success) {
+      cerr << "Error: " << parsed.error_message << "\n";
       return 1;
     }
-
-    // Read starting address
-    infile >> start_addr;
-    infile.ignore();
-    sim.setStartPC(start_addr);
-
-    // Read instructions
-    int pc = start_addr;
-    string line;
-    while (getline(infile, line)) {
-      if (line == "END" || line == "end" || line.empty())
-        break;
-
-      Instruction inst = parseInstruction(line, pc);
-      sim.addInstruction(pc, inst);
-      pc++;
+    
+    // Create simulator with custom configuration
+    TomasuroSimulator sim(parsed.config);
+    
+    // Set starting PC
+    sim.setStartPC(parsed.start_address);
+    
+    // Add instructions
+    for (auto& pair : parsed.instructions) {
+      sim.addInstruction(pair.first, pair.second);
     }
-
-    // Read memory values
-    while (infile) {
-      int addr, value;
-      infile >> addr >> value;
-      if (infile.eof() || addr == -1)
-        break;
-      sim.setMemory(addr, value);
+    
+    // Set memory
+    for (auto& pair : parsed.memory) {
+      sim.setMemory(pair.first, pair.second);
     }
-
-    infile.close();
-    cout << "Successfully loaded " << (pc - start_addr)
+    
+    cout << "Successfully loaded " << parsed.instructions.size()
          << " instructions from file.\n";
+    
+    cout << "\n=== Hardware Configuration ===\n";
+    cout << "ROB Entries: " << parsed.config.rob_entries << "\n";
+    cout << "Reservation Stations:\n";
+    cout << "  LOAD: " << parsed.config.load_rs << "\n";
+    cout << "  STORE: " << parsed.config.store_rs << "\n";
+    cout << "  BEQ: " << parsed.config.beq_rs << "\n";
+    cout << "  CALL/RET: " << parsed.config.call_ret_rs << "\n";
+    cout << "  ADD/SUB: " << parsed.config.addsub_rs << "\n";
+    cout << "  NAND: " << parsed.config.nand_rs << "\n";
+    cout << "  MUL: " << parsed.config.mul_rs << "\n";
+    
+    cout << "\n=== RUNNING SIMULATION ===\n";
+    sim.run();
+    sim.printResults();
 
   } else {
     // Manual input
